@@ -2,6 +2,8 @@ library(tidyverse)
 library(fpp)
 library(fpp2)
 library(GGally)
+library(tsibble)
+library(tsibbledata)
 
 # 2.1 TS Objects ----------------------------------------------------------
 
@@ -83,3 +85,13 @@ ggAcf(aelec, lag = 48)
 set.seed(30)
 y <- ts(rnorm(50))
 autoplot(y) + ggtitle("White noise")
+
+
+# THIRD EDITION -----------------------------------------------------------
+
+PBS %>% 
+        filter(ATC2 == "A10") %>% 
+        select(Month, Concession, Type, Cost) %>% 
+        summarise(TotalC = sum(Cost))
+
+

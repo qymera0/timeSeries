@@ -1,0 +1,193 @@
+library(tidyverse)
+library(fpp)
+library(fpp2)
+
+# 5.1 LINEAR MODEL --------------------------------------------------------
+
+autoplot(uschange[,c("Consumption","Income")]) +
+        ylab("% change") + xlab("Year")
+
+
+uschange %>%
+        as.data.frame() %>%
+        ggplot(aes(x=Income, y=Consumption)) +
+        ylab("Consumption (quarterly % change)") +
+        xlab("Income (quarterly % change)") +
+        geom_point() +
+        geom_smooth(method="lm", se=FALSE)
+
+tslm(Consumption ~ Income, data=uschange)
+
+# Multiple Linear Regression
+
+uschange %>%
+        as.data.frame() %>%
+        GGally::ggpairs()
+
+# 5.2 LEAST SQUARES -------------------------------------------------------
+
+fit.consMR <- tslm(
+        
+        Consumption ~ Income + Production + Unemployment + Savings,
+        
+        data=uschange)
+
+summary(fit.consMR)
+
+# Fitted values
+
+autoplot(uschange[,'Consumption'], series="Data") +
+        autolayer(fitted(fit.consMR), series="Fitted") +
+        xlab("Year") + ylab("") +
+        ggtitle("Percent change in US consumption expenditure") +
+        guides(colour=guide_legend(title=" "))
+
+cbind(Data = uschange[,"Consumption"],
+      Fitted = fitted(fit.consMR)) %>%
+        as.data.frame() %>%
+        ggplot(aes(x=Data, y=Fitted)) +
+        geom_point() +
+        ylab("Fitted (predicted values)") +
+        xlab("Data (actual values)") +
+        ggtitle("Percent change in US consumption expenditure") +
+        geom_abline(intercept=0, slope=1)
+
+checkresiduals(fit.consMR)
+
+# 5.4 USEFUL PREDICTORS ---------------------------------------------------
+
+beer2 <- window(ausbeer, start=1992)
+
+autoplot(beer2) + xlab("Year") + ylab("Megalitres")
+
+fit.beer <- tslm(beer2 ~ trend + season)
+
+summary(fit.beer)
+
+autoplot(beer2, series="Data") +
+        autolayer(fitted(fit.beer), series="Fitted") +
+        xlab("Year") + ylab("Megalitres") +
+        ggtitle("Quarterly Beer Production")
+
+cbind(Data=beer2, Fitted=fitted(fit.beer)) %>%
+        as.data.frame() %>%
+        ggplot(aes(x = Data, y = Fitted,
+                   colour = as.factor(cycle(beer2)))) +
+        geom_point() +
+        ylab("Fitted") + xlab("Actual values") +
+        ggtitle("Quarterly beer production") +
+        scale_colour_brewer(palette="Dark2", name="Quarter") +
+        geom_abline(intercept=0, slope=1)
+
+fourier.beer <- tslm(beer2 ~ trend + fourier(beer2, K=2))
+
+summary(fourier.beer)
+
+# Forecast with regression
+
+beer2 <- window(ausbeer, start=1992)
+
+fit.beer <- tslm(beer2 ~ trend + season)
+
+fcast <- forecast(fit.beer)
+
+autoplot(fcast) +
+  ggtitle("Forecasts of beer production using regression") +
+  xlab("Year") + ylab("megalitres")
+
+# Scenario based forcasting
+
+fit.consBest <- tslm(
+  Consumption ~ Income + Savings + Unemployment,
+  data = uschange)
+
+h <- 4
+
+newdata <- data.frame(
+  Income = c(1, 1, 1, 1),
+  Savings = c(0.5, 0.5, 0.5, 0.5),
+  Unemployment = c(0, 0, 0, 0))
+
+fcast.up <- forecast(fit.consBest, newdata = newdata)
+
+newdata <- data.frame(
+  Income = rep(-1, h),
+  Savings = rep(-0.5, h),
+  Unemployment = rep(0, h))
+
+fcast.down <- forecast(fit.consBest, newdata = newdata)
+
+autoplot(uschange[, 1]) +
+  ylab("% change in US consumption") +
+  autolayer(fcast.up, PI = TRUE, series = "increase") +
+  autolayer(fcast.down, PI = TRUE, series = "decrease") +
+  guides(colour = guide_legend(title = "Scenario"))
+
+# Prediction Intervals
+
+fit.cons <- tslm(Consumption ~ Income, data = uschange)
+
+h <- 4
+
+fcast.ave <- forecast(fit.cons,
+                      newdata = data.frame(
+                        Income = rep(mean(uschange[,"Income"]), h)))
+
+fcast.up <- forecast(fit.cons,
+                     newdata = data.frame(Income = rep(5, h)))
+
+autoplot(uschange[, "Consumption"]) +
+  ylab("% change in US consumption") +
+  autolayer(fcast.ave, series = "Average increase",
+            PI = TRUE) +
+  autolayer(fcast.up, series = "Extreme increase",
+            PI = TRUE) +
+  guides(colour = guide_legend(title = "Scenario"))
+
+# Forecast with non linear trend
+
+h <- 10
+fit.lin <- tslm(marathon ~ trend)
+fcasts.lin <- forecast(fit.lin, h = h)
+fit.exp <- tslm(marathon ~ trend, lambda = 0)
+fcasts.exp <- forecast(fit.exp, h = h)
+
+t <- time(marathon)
+t.break1 <- 1940
+t.break2 <- 1980
+tb1 <- ts(pmax(0, t - t.break1), start = 1897)
+tb2 <- ts(pmax(0, t - t.break2), start = 1897)
+
+fit.pw <- tslm(marathon ~ t + tb1 + tb2)
+t.new <- t[length(t)] + seq(h)
+tb1.new <- tb1[length(tb1)] + seq(h)
+tb2.new <- tb2[length(tb2)] + seq(h)
+
+newdata <- cbind(t=t.new, tb1=tb1.new, tb2=tb2.new) %>%
+  as.data.frame()
+fcasts.pw <- forecast(fit.pw, newdata = newdata)
+
+fit.spline <- tslm(marathon ~ t + I(t^2) + I(t^3) +
+                     I(tb1^3) + I(tb2^3))
+fcasts.spl <- forecast(fit.spline, newdata = newdata)
+
+autoplot(marathon) +
+  autolayer(fitted(fit.lin), series = "Linear") +
+  autolayer(fitted(fit.exp), series = "Exponential") +
+  autolayer(fitted(fit.pw), series = "Piecewise") +
+  autolayer(fitted(fit.spline), series = "Cubic Spline") +
+  autolayer(fcasts.pw, series="Piecewise") +
+  autolayer(fcasts.lin, series="Linear", PI=FALSE) +
+  autolayer(fcasts.exp, series="Exponential", PI=FALSE) +
+  autolayer(fcasts.spl, series="Cubic Spline", PI=FALSE) +
+  xlab("Year") + ylab("Winning times in minutes") +
+  ggtitle("Boston Marathon") +
+  guides(colour = guide_legend(title = " "))
+
+marathon %>%
+  splinef(lambda=0) %>%
+  autoplot()
+
+marathon %>%
+  splinef(lambda=0) %>%
+  checkresiduals()
